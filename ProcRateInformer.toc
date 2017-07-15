@@ -8,6 +8,5 @@
 ## X-Category: Crafting/Trade
 
 core.lua
-cron.lua
 localization/enUS.lua
 main.lua
