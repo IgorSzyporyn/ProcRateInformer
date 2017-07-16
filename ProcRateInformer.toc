@@ -4,7 +4,7 @@
 ## Author: Badgers - Kazzak EU
 ## Version: v0.0.1
 
-## X-Credits: Splynx(coding), Aros(testing), Mictiaan(testing), Sargaretanas(testing)
+## X-Credits: Splynx(coding), Aros(testing), Mictiaan(testing), Saragatanas(testing)
 ## X-Category: Crafting/Trade
 
 core.lua

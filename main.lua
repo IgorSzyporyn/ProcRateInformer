@@ -23,7 +23,7 @@ function addon:KillCraft()
   self:ResetProperties();
 
   if self.verbose then
-    self:Print("Will not be able to compute this craft");
+    self:Print(L["Will not be able to compute this craft"]);
   end
 end
 
@@ -32,20 +32,16 @@ function addon:FinalizeCraft()
   local craftCountPost = GetItemCount(self.craftItemID);
   local craftCountCrafted = craftCountPost - self.craftCountPre;
   local craftCountExpected = self.craftIterations * self.craftYield;
+  local craftCountExtra = craftCountCrafted - craftCountExpected;
+  local itemName, itemLink, _, _, _, _, _, _, _, _, _ = GetItemInfo(self.craftItemID);
 
-  --[[
-  self:Print("craftCountPre: %s", self.craftCountPre);
-  self:Print("craftCountPost: %s", craftCountPost);
-  self:Print("craftCountCrafted: %s", craftCountCrafted);
-  self:Print("craftCountExpected: %s", craftCountExpected);
-  ]]--
-
-  if craftCountCrafted > craftCountExpected then
+  if craftCountExtra > 0 then
     local craftProcRate = craftCountCrafted / craftCountExpected;
 
-    self:Print("Expected yield:  %s", craftCountExpected);
-    self:Print("Actual yield:    %s", craftCountCrafted);
-    self:Print("Craft Proc Rate: %s", craftProcRate);
+    self:Print(L["Total Crafts: %s x %s"], craftCountCrafted, itemLink);
+    self:Print(L["Expected Crafts: %s"], craftCountExpected);
+    self:Print(L["Extra Crafts: %s"], craftCountExtra);
+    self:Print(L["Craft Proc Rate: %s"], craftProcRate);
   end
 
   self:ResetProperties();
@@ -55,14 +51,14 @@ function addon:OnSpellCastStart()
   local castName, _, _, _, _, _, isTradeSkill, _, _ = UnitCastingInfo("player");
 
   self.failed = false;
+  self.crafting = true;
 
   if isTradeSkill then
 
-    if self.crafting and self.castName ~= castName then
+    if self.castName ~= nil and self.castName ~= castName then
       self:FinalizeCraft();
     end
 
-    self.crafting = true;
 
     if self.craftIterations == 0 then
       local tradeSkill = self:GetTradeSkillFromCastName(castName);
@@ -78,6 +74,8 @@ function addon:OnSpellCastStart()
         self:KillCraft();
       end
     end
+  else
+    self.crafting = false;
   end
 end
 
@@ -91,7 +89,7 @@ function addon:OnSpellCastSuccess()
   if self.crafting then
     self.craftIterations = self.craftIterations + 1;
     self.crafting = false;
-    self:Wait(0.35, onSpellCastEnd);
+    self:Wait(1.5, onSpellCastEnd);
   end  
 end
 
