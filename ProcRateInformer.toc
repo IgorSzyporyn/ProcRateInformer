@@ -3,12 +3,14 @@
 ## Notes: A simple proc rate information tool
 ## Author: Badgers - Kazzak EU
 ## Version: 1.0.0
+## SavedVariables: ProcRateInformerHistory
+## SavedVariables: ProcRateInformerConfig
 
 ## X-Credits: Splynx(coding), Aros(testing), Mictiaan(testing), Saragatanas(testing)
 ## X-Category: Professions
 ## X-Curse-Packaged-Version: 1.0.0
 ## X-Curse-Project-Name: ProcRateInformer
-## X-Curse-Project-ID: procrateinformer
+## X-Curse-Project-ID: 272225
 
 core.lua
 localization/enUS.lua

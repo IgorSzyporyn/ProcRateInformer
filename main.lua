@@ -22,7 +22,7 @@ end
 function addon:KillCraft()
   self:ResetProperties();
 
-  if self.verbose then
+  if ProcRateInformerConfig.verbose then
     self:Print(L["Will not be able to compute this craft"]);
   end
 end
@@ -34,14 +34,33 @@ function addon:FinalizeCraft()
   local craftCountExpected = self.craftIterations * self.craftYield;
   local craftCountExtra = craftCountCrafted - craftCountExpected;
   local itemName, itemLink, _, _, _, _, _, _, _, _, _ = GetItemInfo(self.craftItemID);
+  local historicalProcRate = nil;
+
+  if not ProcRateInformerHistory[self.craftItemID] then
+    ProcRateInformerHistory[self.craftItemID] = {
+      crafted = craftCountCrafted,
+      expected = craftCountExpected
+    };
+  else
+    local newHistoricalCrafted = ProcRateInformerHistory[self.craftItemID].crafted + craftCountCrafted;
+    local newHistoricalExpected = ProcRateInformerHistory[self.craftItemID].expected + craftCountExpected;
+    historicalProcRate = newHistoricalCrafted / newHistoricalExpected;
+
+    ProcRateInformerHistory[self.craftItemID] = {
+      crafted = newHistoricalCrafted,
+      expected = newHistoricalExpected
+    };
+  end
 
   if craftCountExtra > 0 then
     local craftProcRate = craftCountCrafted / craftCountExpected;
 
     self:Print(L["Total Crafts: %s x %s"], craftCountCrafted, itemLink);
-    self:Print(L["Expected Crafts: %s"], craftCountExpected);
-    self:Print(L["Extra Crafts: %s"], craftCountExtra);
-    self:Print(L["Proc Rate: %s"], craftProcRate);
+    self:Print(L["Current Proc Rate: %s"], craftProcRate);
+
+    if historicalProcRate then
+      self:Print(L["Historical Proc Rate: %s"], historicalProcRate);
+    end
   end
 
   self:ResetProperties();
@@ -110,13 +129,29 @@ function addon:ResetProperties()
   self.crafting = false;
 end
 
+function addon:InitConfig()
+  if ProcRateInformerConfig == nil then
+    ProcRateInformerConfig = {
+      verbose = false
+    };
+  end
+end
+
+function addon:InitHistory()
+  if ProcRateInformerHistory == nil then
+    ProcRateInformerHistory = {};
+  end
+end
+
 function addon:Enable()
-  addon:Print("BETA version - bugs may occur");
+  addon:Print("Version 1.1.0");
 end
 
 function addon:Initialize()
-  self.verbose = true;  
+  self:InitConfig();
+  self:InitHistory();
   self:ResetProperties();
+
   self:RegisterEvent("UNIT_SPELLCAST_START", "OnSpellCastStart")
   self:RegisterEvent("UNIT_SPELLCAST_SUCCEEDED", "OnSpellCastSuccess")
   self:RegisterEvent("UNIT_SPELLCAST_INTERRUPTED", "OnSpellCastFailed")
