@@ -19,12 +19,28 @@ function addon:GetTradeSkillFromCastName(name)
   return tradeSkill;
 end
 
+function addon:KillCraft()
+  self:ResetProperties();
+
+  if self.verbose then
+    self:Print("Will not be able to compute this craft");
+  end
+end
+
 function addon:FinalizeCraft()
+
   local craftCountPost = GetItemCount(self.craftItemID);
   local craftCountCrafted = craftCountPost - self.craftCountPre;
   local craftCountExpected = self.craftIterations * self.craftYield;
 
-  if craftCountExpected > craftCountCrafted then
+  --[[
+  self:Print("craftCountPre: %s", self.craftCountPre);
+  self:Print("craftCountPost: %s", craftCountPost);
+  self:Print("craftCountCrafted: %s", craftCountCrafted);
+  self:Print("craftCountExpected: %s", craftCountExpected);
+  ]]--
+
+  if craftCountCrafted > craftCountExpected then
     local craftProcRate = craftCountCrafted / craftCountExpected;
 
     self:Print("Expected yield:  %s", craftCountExpected);
@@ -35,21 +51,18 @@ function addon:FinalizeCraft()
   self:ResetProperties();
 end
 
-function addon:KillCraft()
-  self:ResetProperties();
-
-  if self.verbose then
-    self:Print("Will not be able to compute this craft");
-  end
-end
-
 function addon:OnSpellCastStart()
   local castName, _, _, _, _, _, isTradeSkill, _, _ = UnitCastingInfo("player");
 
+  self.failed = false;
+
   if isTradeSkill then
+
     if self.crafting and self.castName ~= castName then
       self:FinalizeCraft();
     end
+
+    self.crafting = true;
 
     if self.craftIterations == 0 then
       local tradeSkill = self:GetTradeSkillFromCastName(castName);
@@ -65,13 +78,11 @@ function addon:OnSpellCastStart()
         self:KillCraft();
       end
     end
-    
-    self.crafting = true;
   end
 end
 
 local function onSpellCastEnd()
-  if not addon.crafting then    
+  if not addon.crafting and not addon.failed then
     addon:FinalizeCraft();
   end
 end
@@ -80,12 +91,13 @@ function addon:OnSpellCastSuccess()
   if self.crafting then
     self.craftIterations = self.craftIterations + 1;
     self.crafting = false;
-    self:Wait(0.25, onSpellCastEnd);
+    self:Wait(0.35, onSpellCastEnd);
   end  
 end
 
 function addon:OnSpellCastFailed()
   if self.crafting then
+    self.failed = true;
     self:FinalizeCraft();
   end
 end
@@ -94,7 +106,7 @@ function addon:ResetProperties()
   self.recipeID = nil;
   self.castName = nil;
   self.craftIterations = 0;
-  self.craftItemID = 0;
+  self.craftItemID = nil;
   self.craftYield = 0;
   self.craftCountPre = 0;
   self.crafting = false;
