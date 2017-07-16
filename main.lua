@@ -41,7 +41,7 @@ function addon:FinalizeCraft()
     self:Print(L["Total Crafts: %s x %s"], craftCountCrafted, itemLink);
     self:Print(L["Expected Crafts: %s"], craftCountExpected);
     self:Print(L["Extra Crafts: %s"], craftCountExtra);
-    self:Print(L["Craft Proc Rate: %s"], craftProcRate);
+    self:Print(L["Proc Rate: %s"], craftProcRate);
   end
 
   self:ResetProperties();
