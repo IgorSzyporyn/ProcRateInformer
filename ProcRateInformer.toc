@@ -2,10 +2,10 @@
 ## Title: ProcRateInformer
 ## Notes: A simple proc rate information tool
 ## Author: Badgers - Kazzak EU
-## Version: v0.0.1
+## Version: 1.0.0
 
 ## X-Credits: Splynx(coding), Aros(testing), Mictiaan(testing), Saragatanas(testing)
-## X-Category: Crafting/Trade
+## X-Category: Professions
 
 core.lua
 localization/enUS.lua
