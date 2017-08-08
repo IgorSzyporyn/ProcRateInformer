@@ -1,159 +1,254 @@
 --[[-------------------------------------------------------------------
 --  ProcRateInformer - Igor Szyporyn Jørgensen
 -------------------------------------------------------------------]]--
+local hooksecurefunc, select, UnitGUID, tonumber, strfind, math
+  = hooksecurefunc, select, UnitGUID, tonumber, strfind, math
+
 local addonName, addon = ...;
 local L = addon.L;
 
-function addon:GetTradeSkillFromCastName(name)
-  local recipeIDs = C_TradeSkillUI.GetAllRecipeIDs();
-  local tradeSkill = nil;
+local craftingCastIteration = 0;
+local craftingCastsForCompletion = 0;
+local craftingInProgress = false;
+local craftingTableItem = nil;
+local craftingYield = 0;
+local itemsInBagsPost = 0;
+local itemsInBagsPre = 0;
 
-  for id = 1, #recipeIDs do
-    local recipe = C_TradeSkillUI.GetRecipeInfo(recipeIDs[id]);
-    if recipe.name == name then
-      tradeSkill = recipe;
-      break;
-    end
+local cachedCrafted = nil;
+local cachedExpected = nil;
+local cachedHistoricalProcRate = nil;
+local cachedHistoricallyExpected = nil;
+local cachedItemLink = nil;
+local cachedProcRate = nil;
+local cachedProcs = nil;
+
+--[[-------------------------------------------------------------------
+--  Utility functions
+-------------------------------------------------------------------]]--
+local function countItems(itemID)
+  local c = 0;
+  for bag=0,NUM_BAG_SLOTS do
+      for slot=1,GetContainerNumSlots(bag) do
+          if itemID == GetContainerItemID(bag,slot) then
+              c=c+(select(2,GetContainerItemInfo(bag,slot)))
+          end
+      end
   end
-
-  return tradeSkill;
+  return c
 end
 
-function addon:KillCraft()
-  self:ResetProperties();
-
-  if ProcRateInformerConfig.verbose then
-    self:Print(L["Will not be able to compute this craft"]);
-  end
+local function round(num, numDecimalPlaces)
+  local mult = 10^(numDecimalPlaces or 0)
+  return math.floor(num * mult + 0.5) / mult
 end
 
+--[[-------------------------------------------------------------------
+--  Print Report functions
+-------------------------------------------------------------------]]--
+local function printSessionReport(expectedCount, craftedCount, procs, craftedProcRate, historicallyExpected, historicalProcRate, itemLink)
+  addon:Print(L["Session report for %s"], itemLink);
+  addon:Print(L["Proc Rate: %s (%s crafts + %s procs = %s total)"], round(craftedProcRate, 2), expectedCount, procs, craftedCount);
+  addon:Print(L["Historical Proc Rate: %s (%s crafts)"], round(historicalProcRate, 2), historicallyExpected);
+end
+
+local function printHistoricalReport()
+
+end
+
+
+--[[-------------------------------------------------------------------
+--  Finalize the craft calculations, emit procs and set historical values
+-------------------------------------------------------------------]]--
 function addon:FinalizeCraft()
 
-  local craftCountPost = GetItemCount(self.craftItemID);
-  local craftCountCrafted = craftCountPost - self.craftCountPre;
-  local craftCountExpected = self.craftIterations * self.craftYield;
-  local craftCountExtra = craftCountCrafted - craftCountExpected;
-  local itemName, itemLink, _, _, _, _, _, _, _, _, _ = GetItemInfo(self.craftItemID);
+  local recipeID = craftingTableItem.ID;
+  local itemID = craftingTableItem.itemID;  
+
+  itemsInBagsPost = countItems(itemID);
+
+  local _, itemLink, _, _, _, _, _, _, _, _, _ = GetItemInfo(itemID);
+  local craftedCount = itemsInBagsPost - itemsInBagsPre;
+  local expectedCount = craftingCastIteration * craftingYield;
+  local procs = craftedCount - expectedCount;
   local historicalProcRate = nil;
 
-  if not ProcRateInformerHistory[self.craftItemID] then
-    ProcRateInformerHistory[self.craftItemID] = {
-      crafted = craftCountCrafted,
-      expected = craftCountExpected
-    };
+  if not ProcRateInformerTable[recipeID].crafted then
+    ProcRateInformerTable[recipeID].crafted = craftedCount;
+    ProcRateInformerTable[recipeID].expected = expectedCount;
+    ProcRateInformerTable[recipeID].procs = procs;
   else
-    local newHistoricalCrafted = ProcRateInformerHistory[self.craftItemID].crafted + craftCountCrafted;
-    local newHistoricalExpected = ProcRateInformerHistory[self.craftItemID].expected + craftCountExpected;
+    local newHistoricalCrafted = ProcRateInformerTable[recipeID].crafted + craftedCount;
+    local newHistoricalExpected = ProcRateInformerTable[recipeID].expected + expectedCount;
+    local newHistoricalProcs = ProcRateInformerTable[recipeID].procs + procs;
+
+    ProcRateInformerTable[recipeID].crafted = newHistoricalCrafted;
+    ProcRateInformerTable[recipeID].expected = newHistoricalExpected;
+    ProcRateInformerTable[recipeID].procs = newHistoricalProcs;
+
     historicalProcRate = newHistoricalCrafted / newHistoricalExpected;
-
-    ProcRateInformerHistory[self.craftItemID] = {
-      crafted = newHistoricalCrafted,
-      expected = newHistoricalExpected
-    };
   end
 
-  if craftCountExtra > 0 then
-    local craftProcRate = craftCountCrafted / craftCountExpected;
+  local historicallyCrafted = ProcRateInformerTable[recipeID].crafted;
+  local historicallyExpected = ProcRateInformerTable[recipeID].expected;
+  local historicalProcs = ProcRateInformerTable[recipeID].procs;
 
-    self:Print(L["Total Crafts: %s x %s"], craftCountCrafted, itemLink);
-    self:Print(L["Current Proc Rate: %s"], craftProcRate);
+  if procs > 0 then
+    local craftedProcRate = craftedCount / expectedCount;
 
-    if historicalProcRate then
-      self:Print(L["Historical Proc Rate: %s"], historicalProcRate);
+    if historicalProcRate == nil then
+      historicalProcRate = craftedProcRate;
     end
-  end
+ 
+    cachedCrafted = craftedCount;
+    cachedExpected = expectedCount;
+    cachedHistoricalProcRate = historicalProcRate;
+    cachedHistoricallyExpected = historicallyExpected;
+    cachedItemLink = itemLink;
+    cachedProcRate = craftedProcRate;
+    cachedProcs = procs;
 
-  self:ResetProperties();
-end
-
-function addon:OnSpellCastStart()
-  local castName, _, _, _, _, _, isTradeSkill, _, _ = UnitCastingInfo("player");
-
-  self.failed = false;
-  self.crafting = true;
-
-  if isTradeSkill then
-
-    if self.castName ~= nil and self.castName ~= castName then
-      self:FinalizeCraft();
-    end
-
-
-    if self.craftIterations == 0 then
-      local tradeSkill = self:GetTradeSkillFromCastName(castName);
-
-      if tradeSkill then
-        local recipeID = tradeSkill.recipeID;
-
-        self.castName = castName;
-        self.craftYield = C_TradeSkillUI.GetRecipeNumItemsProduced(recipeID);
-        self.craftItemID = C_TradeSkillUI.GetRecipeItemLink(recipeID):match("item:(%d+):")
-        self.craftCountPre = GetItemCount(self.craftItemID);
-      else
-        self:KillCraft();
-      end
-    end
+    printSessionReport(expectedCount, craftedCount, procs, craftedProcRate, historicallyExpected, historicalProcRate, itemLink);
   else
-    self.crafting = false;
+    self:Print(L["No procs recorded for your craft of %s"], itemLink);
   end
+
+  self:InitProperties();
 end
 
-local function onSpellCastEnd()
-  if not addon.crafting and not addon.failed then
-    addon:FinalizeCraft();
+
+--[[-------------------------------------------------------------------
+--  Cast event handlers (craft start, each successfull cast, cast aborts)
+-------------------------------------------------------------------]]--
+
+local function onCraftStart(recipeID, amount)
+  craftingTableItem = ProcRateInformerTable[recipeID];
+
+  if craftingTableItem then
+    craftingYield = C_TradeSkillUI.GetRecipeNumItemsProduced(recipeID);
+    craftingInProgress = true;
+    craftingCastIteration = 0;
+    craftingCastsForCompletion = amount / craftingYield;
+    itemsInBagsPre = countItems(craftingTableItem.itemID);
   end
 end
 
 function addon:OnSpellCastSuccess()
-  if self.crafting then
-    self.craftIterations = self.craftIterations + 1;
-    self.crafting = false;
-    self:Wait(1.5, onSpellCastEnd);
-  end  
-end
-
-function addon:OnSpellCastFailed()
-  if self.crafting then
-    self.failed = true;
-    self:FinalizeCraft();
+  if craftingInProgress then
+    craftingCastIteration = craftingCastIteration + 1;
+    if craftingCastIteration == craftingCastsForCompletion then
+      self:Wait(1.5, function()
+        addon:FinalizeCraft();
+      end)
+    end
   end
 end
 
-function addon:ResetProperties()
-  self.recipeID = nil;
-  self.castName = nil;
-  self.craftIterations = 0;
-  self.craftItemID = nil;
-  self.craftYield = 0;
-  self.craftCountPre = 0;
-  self.crafting = false;
+function addon:OnSpellCastFailed()
+  if craftingInProgress then
+    self:Wait(1.5, function()
+      addon:FinalizeCraft();
+    end)
+  end
 end
 
-function addon:InitConfig()
+function addon:InitProperties()
+  craftingCastIteration = 0;
+  craftingCastsForCompletion = 0;
+  craftingInProgress = false;
+  craftingTableItem = nil;
+  craftingYield = 0;
+  itemsInBagsPost = 0;
+  itemsInBagsPre = 0;
+end
+
+
+--[[-------------------------------------------------------------------
+--  Initializing methods
+-------------------------------------------------------------------]]--
+function addon:initGlobals()
   if ProcRateInformerConfig == nil then
     ProcRateInformerConfig = {
       verbose = false
     };
   end
-end
 
-function addon:InitHistory()
-  if ProcRateInformerHistory == nil then
-    ProcRateInformerHistory = {};
+  if ProcRateInformerTable == nil then
+    ProcRateInformerTable = {};
   end
 end
 
-function addon:Enable()
-  addon:Print("Version 1.1.0");
+function addon:InitVersion()
+  if ProcRateInformerConfig.version < 0700 then
+    ProcRateInformerConfig.version = 0700;
+  end
 end
 
-function addon:Initialize()
-  self:InitConfig();
-  self:InitHistory();
-  self:ResetProperties();
+function addon:LegacyCleanUp()
+  ProcRateInformerHistory = nil;
+end
 
-  self:RegisterEvent("UNIT_SPELLCAST_START", "OnSpellCastStart")
-  self:RegisterEvent("UNIT_SPELLCAST_SUCCEEDED", "OnSpellCastSuccess")
-  self:RegisterEvent("UNIT_SPELLCAST_INTERRUPTED", "OnSpellCastFailed")
-  self:RegisterEvent("UNIT_SPELLCAST_FAILED", "OnSpellCastFailed")
+function addon:Enable()
+  addon:Print("Version 0.7");
+end
+
+
+--[[-------------------------------------------------------------------
+--  Command handler functions.
+-------------------------------------------------------------------]]--
+
+--[[-------------------------------------------------------------------
+--  Shows last craft repots
+-------------------------------------------------------------------]]--
+local function showLastReport()
+  if cachedExpected then
+    printSessionReport(cachedExpected, cachedCrafted, cachedProcs, cachedProcRate, cachedHistoricallyExpected, cachedHistoricalProcRate, cachedItemLink);
+  else
+    addon:Print(L["No crafting session recorded"]);
+  end
+end
+
+--[[-------------------------------------------------------------------
+--  Shows version
+-------------------------------------------------------------------]]--
+local function showVersion()
+  addon:Print(ProcRateInformerConfig.version);
+end
+
+--[[-------------------------------------------------------------------
+--  Called to handle commands.
+-------------------------------------------------------------------]]--
+local function slashCommandHandler(params, editBox)
+
+  local _,_,command,options = string.find(msg,"([%w%p]+)%s*(.*)$");
+
+  if (command) then
+  command = string.lower(command);
+  end
+
+  if (command == nil or command == "") then
+    -- editBox();
+  elseif (command == "last") then showLastReport();
+  elseif (command == "version") then showVersion();
+  end
+end
+
+
+--[[-------------------------------------------------------------------
+--  Addon Initialization
+-------------------------------------------------------------------]]--
+function addon:Initialize()
+  self:initGlobals();
+  self:InitVersion();
+  self:InitProperties();
+  self:LegacyCleanUp();
+
+  hooksecurefunc(C_TradeSkillUI, "CraftRecipe", onCraftStart);
+  self:RegisterEvent("UNIT_SPELLCAST_SUCCEEDED", "OnSpellCastSuccess");
+  self:RegisterEvent("UNIT_SPELLCAST_INTERRUPTED", "OnSpellCastFailed");
+  self:RegisterEvent("UNIT_SPELLCAST_FAILED", "OnSpellCastFailed");
+
+  SlashCmdList["PROCRATEINFORMER"] = slashCommandHandler;
+  SLASH_PROCRATEINFORMER1 = "/pri";
+  SLASH_PROCRATEINFORMER2 = "/procrateinformer";
 end
